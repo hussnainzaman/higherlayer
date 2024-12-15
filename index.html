@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video Player</title>
+    <style>
+        /* General Styling */
+        body {
+            font-family: 'Arial', sans-serif;
+            background-color: #f4f4f9;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            text-align: center;
+        }
+
+        h1 {
+            font-size: 2.5rem;
+            color: #333;
+            margin-bottom: 20px;
+        }
+
+        #videoContainer {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin-bottom: 30px;
+        }
+
+        /* Video Buttons */
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            padding: 12px 25px;
+            font-size: 18px;
+            cursor: pointer;
+            margin: 10px;
+            transition: background-color 0.3s ease, transform 0.2s ease;
+        }
+
+        button:hover {
+            background-color: #0056b3;
+            transform: translateY(-2px);
+        }
+
+        button:active {
+            transform: translateY(2px);
+        }
+
+        /* Video Player Section */
+        #videoPlayer {
+            width: 100%;
+            max-width: 800px;
+            background-color: #000;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+
+        video {
+            width: 100%;
+            height: auto;
+            border-radius: 10px;
+        }
+
+        /* Loading and Error Message */
+        p {
+            font-size: 1.2rem;
+            color: #555;
+        }
+
+        .loading,
+        .error {
+            font-style: italic;
+            color: #888;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Video Player with Buttons</h1>
+    <div id="videoContainer">
+        <!-- Buttons will appear here -->
+    </div>
+    <div id="videoPlayer">
+        <!-- The selected video will play here -->
+    </div>
+
+    <script>
+        const loadVideos = async () => {
+            const videoContainer = document.getElementById('videoContainer');
+            videoContainer.innerHTML = '<p class="loading">Loading videos...</p>'; // Show a loading message
+
+            try {
+                const response = await fetch('http://localhost:8080/videos'); // Fetch the video list
+                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+
+                const videos = await response.json();
+                if (videos.length === 0) {
+                    videoContainer.innerHTML = '<p>No videos available.</p>';
+                    return;
+                }
+
+                // Render buttons for each video
+                videoContainer.innerHTML = videos.map(video =>
+                    `<button onclick="playVideo('${video}')">${video}</button>`
+                ).join('');
+            } catch (error) {
+                console.error('Error fetching videos:', error);
+                videoContainer.innerHTML = `<p class="error">Error loading videos: ${error.message}</p>`;
+            }
+        };
+
+        const playVideo = (video) => {
+            const videoPlayer = document.getElementById('videoPlayer');
+            videoPlayer.innerHTML = `
+                <video controls autoplay>
+                    <source src="http://localhost:8084/${video}" type="video/mp4">
+                    Your browser does not support the video tag.
+                </video>
+            `;
+        };
+
+        loadVideos();
+    </script>
+</body>
+
+</html>
