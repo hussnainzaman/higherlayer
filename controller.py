@@ -4,7 +4,7 @@ import requests
 app = Flask(__name__)
 
 # Define configuration variables for the replica servers
-REPLICA_SERVERS = ['http://localhost:8081', 'http://localhost:8082', 'http://localhost:8083']
+REPLICA_SERVERS = ['https://localhost:8081', 'https://localhost:8082', 'https://localhost:8083']
 
 # Initialize round-robin index for each video (ensures even distribution of requests)
 round_robin_index = {}
@@ -69,7 +69,7 @@ def get_video(video_name):
                     print(f"Error fetching from replica {selected_replica}: {e}")
 
     # If the video is not cached, fetch it from the origin server
-    origin_server_url = f"http://localhost:8080/{video_file}"
+    origin_server_url = f"https://localhost:8080/{video_file}"
     try:
         response = requests.get(origin_server_url, stream=True)
         if response.status_code == 200:
@@ -97,7 +97,10 @@ if __name__ == '__main__':
     # Configure the Hypercorn server for HTTP/2
     config = Config()
     config.bind = ["localhost:8084"]  # Bind the server to localhost on port 8084
-    config.alpn_protocols = ["h2"]  # Enable HTTP/2 protocol
+    config.alpn_protocols = ["h2", "http/1.1"]  # Enable HTTP/2
+    config.certfile = "cert/cert.pem"  # Specify the SSL certificate
+    config.keyfile = "cert/key.pem"  # Specify the SSL key
+    config.ssl_handshake_timeout = 5
 
     import asyncio
     asyncio.run(hypercorn.asyncio.serve(app, config))

@@ -1,6 +1,10 @@
 from flask import Flask, Response, send_file, request
 import os
+import asyncio
+import hypercorn.asyncio
+from hypercorn.config import Config
 
+# Initialize Flask app
 app = Flask(__name__)
 
 # Directory to store replicated videos
@@ -66,14 +70,13 @@ def replicate_video():
         return Response('Internal server error', status=500)
 
 if __name__ == '__main__':
-    import hypercorn.asyncio
-    from hypercorn.config import Config
-
-    # Configure the server to use HTTP/2
+    # Configure the server to use HTTP/2 with SSL
     config = Config()
     config.bind = ["localhost:8082"]  # Set the server to listen on localhost and port 8081
-    config.alpn_protocols = ["h2"]    # Enable HTTP/2
+    config.alpn_protocols = ["h2", "http/1.1"]  # Enable HTTP/2
+    config.certfile = 'cert/cert.pem'  # Path to your SSL certificate
+    config.keyfile = 'cert/key.pem'    # Path to your SSL private key
+    config.ssl_handshake_timeout = 5
 
-    import asyncio
-    # Run the server asynchronously with Hypercorn
+    # Run the server asynchronously with Hypercorn and SSL enabled
     asyncio.run(hypercorn.asyncio.serve(app, config))

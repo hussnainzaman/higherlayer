@@ -1,20 +1,19 @@
 from flask import Flask, Response, jsonify, send_from_directory
 import os
-import requests
-from flask_cors import CORS
 import asyncio
 import aiohttp
+from hypercorn.asyncio import serve
+from hypercorn.config import Config
 
 # Initialize Flask app
 app = Flask(__name__)
-CORS(app)  # Enable CORS for all routes
 
 # Directory where video files are located
 VIDEO_DIRECTORY = 'videos'
 
 # List of cache servers (replica servers)
 CACHE_SERVERS = [
-    'http://localhost:8081', 'http://localhost:8082', 'http://localhost:8083'
+    'https://localhost:8081', 'https://localhost:8082', 'https://localhost:8083'
 ]
 
 # ------------------------- Helper Functions -------------------------
@@ -110,14 +109,13 @@ def serve_video(filename):
 # ------------------------- Main Entry Point -------------------------
 
 if __name__ == '__main__':
-    from hypercorn.asyncio import serve
-    from hypercorn.config import Config
-
+    # Hypercorn configuration with SSL and HTTP/2 enabled
     config = Config()
+    ssl_context = ('cert/cert.pem', 'cert/key.pem')
     config.bind = ["localhost:8080"]
-    config.ssl_certfile = "CERT/certificate.pem"  # Path to your SSL certificate
-    config.ssl_keyfile = "CERT/private.pem"       # Path to your SSL private key
-    config.alpn_protocols = ["h2"]  # Enable HTTP/2
+    config.certfile = ssl_context[0]  # Path to SSL certificate
+    config.keyfile = ssl_context[1]   # Path to SSL private key
+    config.alpn_protocols = ["h2","http/1.1"]  # Enable HTTP/2 and HTTP/1.1
 
     print("Starting server on https://localhost:8080 (HTTP/2 enabled)...")
 
