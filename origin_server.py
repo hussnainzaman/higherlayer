@@ -1,15 +1,17 @@
-from flask import Flask, Response, jsonify, send_from_directory, make_response
+from quart import Quart, Response, jsonify, send_from_directory
 import os
 import asyncio
 import aiohttp
-from flask_cors import CORS 
+from quart_cors import cors  # Use quart_cors for CORS support
 from hypercorn.asyncio import serve
 from hypercorn.config import Config
+import ssl
 
-# Initialize Flask app
-app = Flask(__name__)
+# Initialize Quart app
+app = Quart(__name__)
 
-CORS(app, origins="*", methods=["GET", "POST"], supports_credentials=True)
+# Enable CORS for all routes (allow cross-origin requests)
+app = cors(app, allow_origin="*")
 
 # Directory where video files are located
 VIDEO_DIRECTORY = 'videos'
@@ -18,6 +20,9 @@ VIDEO_DIRECTORY = 'videos'
 CACHE_SERVERS = [
     'https://localhost:8081', 'https://localhost:8082', 'https://localhost:8083'
 ]
+
+# Path to the self-signed CA certificate
+CA_CERT_PATH = 'cert/cert.pem'
 
 # ------------------------- Helper Functions -------------------------
 
@@ -31,11 +36,11 @@ def video_exists_locally(video_name):
 
 async def check_video_on_replicas(video_name):
     """Asynchronously check if the video exists on any replica server."""
+    ssl_context = ssl.create_default_context(cafile=CA_CERT_PATH)  # Use custom CA certificate
     for replica in CACHE_SERVERS:
         try:
-            # Disable SSL verification for inter-server requests
             async with aiohttp.ClientSession() as session:
-                async with session.head(f"{replica}/{video_name}", ssl=False) as response:
+                async with session.head(f"{replica}/{video_name}", ssl=ssl_context) as response:
                     if response.status == 200:
                         return True  # Video exists on this replica
         except Exception as e:
@@ -51,6 +56,8 @@ async def replicate_video_to_cache_servers(video_name):
 
     print(f"Replicating video {video_name} to all cache servers...")
 
+    ssl_context = ssl.create_default_context(cafile=CA_CERT_PATH)  # Use custom CA certificate
+
     async def replicate_to_server(cache_server):
         try:
             async with aiohttp.ClientSession() as session:
@@ -58,8 +65,7 @@ async def replicate_video_to_cache_servers(video_name):
                     data = aiohttp.FormData()
                     data.add_field('video_name', video_name)
                     data.add_field('video', video_file, filename=video_name, content_type='video/mp4')
-                    # Disable SSL verification for inter-server requests
-                    async with session.post(f"{cache_server}/replicate", data=data, ssl=False) as response:
+                    async with session.post(f"{cache_server}/replicate", data=data, ssl=ssl_context) as response:
                         if response.status == 200:
                             print(f"Video {video_name} successfully replicated to {cache_server}")
                         else:
@@ -73,12 +79,12 @@ async def replicate_video_to_cache_servers(video_name):
 # ------------------------- API Endpoints -------------------------
 
 @app.route('/')
-def home():
+async def home():
     """Welcome endpoint for the server."""
     return "Welcome to the Origin Server!"
 
 @app.route('/videos', methods=['GET'])
-def list_videos():
+async def list_videos():
     """Lists all available videos in the video directory."""
     try:
         files = os.listdir(VIDEO_DIRECTORY)
@@ -89,29 +95,29 @@ def list_videos():
         return "Error reading video directory", 500
 
 @app.route('/<path:filename>', methods=['GET'])
-def serve_video(filename):
+async def serve_video(filename):
     """Serves a video and replicates it to cache servers if not already cached."""
     try:
         # Check if the video exists on replica servers
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        video_cached = loop.run_until_complete(check_video_on_replicas(filename))
+        video_cached = await check_video_on_replicas(filename)
 
         if video_cached:
             print(f"Video {filename} is already cached on replica servers.")
         else:
             # Replicate video to cache servers if not cached
-            loop.run_until_complete(replicate_video_to_cache_servers(filename))
+            await replicate_video_to_cache_servers(filename)
 
-        # Serve the video
-        response = send_from_directory(VIDEO_DIRECTORY, filename)
-        response.headers['Cache-Control'] = 'max-age=3600, public'
-        return response
+        # Construct the absolute path to the video
+        video_path = get_video_path(filename)
+
+        if os.path.exists(video_path):
+            # Serve the video using send_from_directory
+            return await send_from_directory(VIDEO_DIRECTORY, filename)
+        else:
+            return jsonify({'error': f'Video {filename} not found'}), 404
     except Exception as e:
         print(f"Error serving video {filename}: {e}")
-        return "Error serving video", 500
-
-
+        return jsonify({'error': 'Internal Server Error'}), 500
 
 # ------------------------- Main Entry Point -------------------------
 
@@ -122,9 +128,10 @@ if __name__ == '__main__':
     config.bind = ["localhost:8080"]
     config.certfile = ssl_context[0]  # Path to SSL certificate
     config.keyfile = ssl_context[1]   # Path to SSL private key
-    config.alpn_protocols = ["h2", "http/1.1"]  # Enable HTTP/2 and HTTP/1.1
+    config.alpn_protocols = ["h2","http/1.1"]  # Disable HTTP/2 temporarily if needed
+    config.shutdown_timeout = 50       # Increase shutdown timeout to avoid errors
 
-    print("Starting server on https://localhost:8080 (HTTP/2 enabled)...")
+    print("Starting server on https://localhost:8080...")
 
     # Run the Hypercorn server
     asyncio.run(serve(app, config))

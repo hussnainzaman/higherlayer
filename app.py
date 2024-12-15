@@ -1,23 +1,20 @@
-from flask import Flask, render_template, make_response, jsonify
-from flask_cors import CORS  # Import CORS to handle Cross-Origin Resource Sharing
+from quart import Quart, render_template, make_response, jsonify
+from quart_cors import cors  # Import CORS to handle Cross-Origin Resource Sharing
 import hypercorn.asyncio
 from hypercorn.config import Config
 import asyncio
 import os
 
-# Initialize the Flask app
-app = Flask(__name__)
+# Initialize the Quart app
+app = Quart(__name__)
 
 # Enable CORS for all routes (allow cross-origin requests)
-CORS(app, origins="*", methods=["GET", "POST"], supports_credentials=True)
-
+app = cors(app, allow_origin="*")
 
 # Define a route for the homepage
 @app.route('/')
-def home():
-    return render_template('index.html')
-
-
+async def home():
+    return await render_template('index.html')
 
 # You can also define additional routes here if needed (like /videos, etc.)
 

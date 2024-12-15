@@ -1,32 +1,35 @@
-from flask import Flask, Response, send_file, request
+from quart import Quart, Response, request
 import os
-import asyncio
-import hypercorn.asyncio
-from hypercorn.config import Config
-import aiohttp
 import ssl
+from quart_cors import cors  # Use quart_cors for CORS support
+from hypercorn.asyncio import serve
+from hypercorn.config import Config
+import asyncio
 
-from flask_cors import CORS 
-app = Flask(__name__)
+# Initialize Quart app
+app = Quart(__name__)
 
-CORS(app, origins="*", methods=["GET", "POST"], supports_credentials=True)
-
+# Enable CORS for all routes (allow cross-origin requests)
+app = cors(app, allow_origin="*")
 
 # Directory to store replicated videos
 REPLICA_VIDEO_DIRECTORY = 'replicated_videos_2'
+
+# Path to the CA certificate
+CA_CERT_PATH = 'cert/cert.pem'
 
 # Ensure the replica video directory exists
 os.makedirs(REPLICA_VIDEO_DIRECTORY, exist_ok=True)
 
 @app.route('/')
-def home():
+async def home():
     """
     Welcome endpoint for the replica server.
     """
     return "Welcome to Replica Server 2!"
 
 @app.route('/<video_name>', methods=['HEAD', 'GET'])
-def serve_replicated_video(video_name):
+async def serve_replicated_video(video_name):
     """
     Serve a video file from the replica server.
 
@@ -41,53 +44,63 @@ def serve_replicated_video(video_name):
         if request.method == 'HEAD':
             # For HEAD requests, only check the existence of the file
             return Response(status=200)
-        # For GET requests, send the video file
-        return send_file(video_path, mimetype='video/mp4')
+        
+        # For GET requests, stream the video file
+        return await stream_video(video_path)
 
     return Response('Video not found', status=404)
 
 @app.route('/replicate', methods=['POST'])
 async def replicate_video():
     """
-    Replicate a video file to this replica server.
-
-    - Expects the video name and file content in the POST request.
+    Handle the video replication from the origin server.
     """
     try:
-        # Extract video name and content from the request
-        video_name = request.form['video_name']
-        video_content = request.files['video'].read()
+        # Retrieve video name and file from the request
+        form_data = await request.form
+        files_data = await request.files
+
+        video_name = form_data.get('video_name')
+        video_file = files_data.get('video')
+
+        # Validate input data
+        if not video_name:
+            print("Error: Missing 'video_name' in the form data.")
+            return Response("Missing 'video_name' in the form data.", status=400)
+        
+        if not video_file:
+            print("Error: Missing 'video' file in the request.")
+            return Response("Missing 'video' file in the request.", status=400)
 
         # Sanitize the video name to prevent directory traversal
         video_name = os.path.basename(video_name)
-
-        # Define the path to save the video
         video_path = os.path.join(REPLICA_VIDEO_DIRECTORY, video_name)
 
-        # Save the video file to the replica directory
-        with open(video_path, 'wb') as video_file:
-            video_file.write(video_content)
+        # Save the uploaded video to the replica server directory
+        print(f"Saving video to: {video_path}")
+        await video_file.save(video_path)
 
-        # Example of making a request to another server with SSL verification disabled
-        async with aiohttp.ClientSession() as session:
-            ssl_context = ssl.create_default_context()
-            ssl_context.check_hostname = False  # Disable hostname verification
-            ssl_context.verify_mode = ssl.CERT_NONE  # Disable SSL certificate verification
-
-            # Example of posting the replicated video to another server (just for illustration)
-            async with session.post('https://some-external-server.com/replicate', 
-                                   data={'video_name': video_name, 'video': video_content},
-                                   ssl=ssl_context) as response:
-                if response.status == 200:
-                    print('Replication successful to external server')
-                else:
-                    print(f'Replication failed: {response.status}')
-
-        return Response('Video replicated successfully', status=200)
+        print(f"Video {video_name} replicated successfully.")
+        return Response(f"Video {video_name} replicated successfully.", status=200)
+    
     except Exception as e:
-        # Log the error for debugging
-        print(f'Error replicating video: {str(e)}')
-        return Response('Internal server error', status=500)
+        # Log the error and return a 500 status with the exception details
+        print(f"Error during replication: {e}")
+        return Response(f"Error during replication: {str(e)}", status=500)
+
+async def stream_video(video_path):
+    """
+    Asynchronously stream a video file.
+    """
+    def generate():
+        try:
+            with open(video_path, 'rb') as video_file:
+                while chunk := video_file.read(1024 * 64):  # Stream 64 KB chunks
+                    yield chunk
+        except Exception as e:
+            print(f"Error during video streaming: {e}")
+
+    return Response(generate(), content_type='video/mp4')
 
 if __name__ == '__main__':
     # Configure the server to use HTTP/2 with SSL
@@ -96,7 +109,8 @@ if __name__ == '__main__':
     config.alpn_protocols = ["h2", "http/1.1"]  # Enable HTTP/2
     config.certfile = 'cert/cert.pem'  # Path to your SSL certificate
     config.keyfile = 'cert/key.pem'    # Path to your SSL private key
-    config.ssl_handshake_timeout = 5
+    config.ssl_handshake_timeout = 50
 
     # Run the server asynchronously with Hypercorn and SSL enabled
-    asyncio.run(hypercorn.asyncio.serve(app, config))
+    print("Starting Replica Server 1 on https://localhost:8082")
+    asyncio.run(serve(app, config))

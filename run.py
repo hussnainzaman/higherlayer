@@ -1,6 +1,5 @@
 import subprocess
 
-# List of Python files you want to run
 python_files = [
     'app.py',
     'origin_server.py',
@@ -10,17 +9,23 @@ python_files = [
     'replica_server3.py'
 ]
 
-
-# List to hold the processes
 processes = []
 
-# Loop through the list and start each script as a subprocess
 for file in python_files:
-    process = subprocess.Popen(['python', file])
-    processes.append(process)
+    process = subprocess.Popen(
+        ['python', file],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True
+    )
+    processes.append((file, process))
 
-# Wait for all processes to finish
-for process in processes:
-    process.wait()
+# Monitor for errors in real-time
+for file, process in processes:
+    stdout, stderr = process.communicate()
+    print(f"Output from {file}:")
+    print(stdout)
+    print(f"Errors from {file}:")
+    print(stderr)
 
 print("All scripts executed.")
