@@ -14,6 +14,7 @@ cache_servers = [
     'http://localhost:8081', 'http://localhost:8082', 'http://localhost:8083'
 ]
 
+
 def check_video_on_replicas(video_name):
     """Check if the video exists on any replica server."""
     for replica in cache_servers:
@@ -24,6 +25,7 @@ def check_video_on_replicas(video_name):
         except requests.exceptions.RequestException as e:
             print(f"Error checking video on {replica}: {e}")
     return False
+
 
 def replicate_video_to_cache_servers(video_name):
     """Push the video to all cache servers asynchronously."""
@@ -51,9 +53,11 @@ def replicate_video_to_cache_servers(video_name):
         except requests.exceptions.RequestException as e:
             print(f"Error replicating video {video_name} to cache server {cache_server}: {e}")
 
+
 @app.route('/')
 def home():
     return "Welcome to the Origin Server!"
+
 
 @app.route('/videos', methods=['GET'])
 def list_videos():
@@ -64,6 +68,7 @@ def list_videos():
     except Exception as e:
         print(f"Error reading video directory: {e}")
         return "Error reading video directory", 500
+
 
 @app.route('/<path:filename>', methods=['GET'])
 def serve_video(filename):
@@ -82,12 +87,16 @@ def serve_video(filename):
         print(f"Error serving video {filename}: {e}")
         return "Error serving video", 500
 
+
 if __name__ == '__main__':
     import hypercorn.asyncio
     from hypercorn.config import Config
 
     config = Config()
     config.bind = ["localhost:8080"]
+    # Enable TLS with your certificate and key files
+    config.ssl_certfile = "CERT\certificate.pem"
+    config.ssl_keyfile = "CERT\private.pem"
     config.alpn_protocols = ["h2"]
 
     import asyncio
