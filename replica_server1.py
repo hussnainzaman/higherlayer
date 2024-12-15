@@ -3,6 +3,8 @@ import os
 import asyncio
 import hypercorn.asyncio
 from hypercorn.config import Config
+import aiohttp
+import ssl
 
 # Initialize Flask app
 app = Flask(__name__)
@@ -42,7 +44,7 @@ def serve_replicated_video(video_name):
     return Response('Video not found', status=404)
 
 @app.route('/replicate', methods=['POST'])
-def replicate_video():
+async def replicate_video():
     """
     Replicate a video file to this replica server.
 
@@ -62,6 +64,21 @@ def replicate_video():
         # Save the video file to the replica directory
         with open(video_path, 'wb') as video_file:
             video_file.write(video_content)
+
+        # Example of making a request to another server with SSL verification disabled
+        async with aiohttp.ClientSession() as session:
+            ssl_context = ssl.create_default_context()
+            ssl_context.check_hostname = False  # Disable hostname verification
+            ssl_context.verify_mode = ssl.CERT_NONE  # Disable SSL certificate verification
+
+            # Example of posting the replicated video to another server (just for illustration)
+            async with session.post('https://some-external-server.com/replicate', 
+                                   data={'video_name': video_name, 'video': video_content},
+                                   ssl=ssl_context) as response:
+                if response.status == 200:
+                    print('Replication successful to external server')
+                else:
+                    print(f'Replication failed: {response.status}')
 
         return Response('Video replicated successfully', status=200)
     except Exception as e:

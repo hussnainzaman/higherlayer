@@ -28,7 +28,8 @@ def check_video_on_replicas(video_name):
     """Check if the video exists on any replica server by sending HEAD requests."""
     for replica in REPLICA_SERVERS:
         try:
-            response = requests.head(f"{replica}/{video_name}")
+            # Disable SSL verification only for inter-server requests
+            response = requests.head(f"{replica}/{video_name}", verify=False)
             if response.status_code == 200:
                 return True  # Video exists on this replica
         except requests.exceptions.RequestException as e:
@@ -52,7 +53,7 @@ def get_video(video_name):
             if selected_replica:
                 try:
                     # Fetch the video from the selected replica server
-                    response = requests.get(f"{selected_replica}/{video_file}", stream=True)
+                    response = requests.get(f"{selected_replica}/{video_file}", stream=True, verify=False)
                     if response.status_code == 200:
                         def generate():
                             try:
@@ -71,7 +72,7 @@ def get_video(video_name):
     # If the video is not cached, fetch it from the origin server
     origin_server_url = f"https://localhost:8080/{video_file}"
     try:
-        response = requests.get(origin_server_url, stream=True)
+        response = requests.get(origin_server_url, stream=True, verify=True)  # Verify SSL for origin server
         if response.status_code == 200:
             def generate():
                 try:

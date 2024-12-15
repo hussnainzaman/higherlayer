@@ -99,7 +99,16 @@
             videoContainer.innerHTML = '<p class="loading">Loading videos...</p>'; // Show a loading message
 
             try {
-                const response = await fetch('https://localhost:8080/videos'); // Fetch the video list
+                const response = await fetch('https://localhost:8080/videos', {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    // Disable SSL verification for development (only for local testing with self-signed certificates)
+                    // This only works in environments where SSL can be bypassed (like in Node.js, for example)
+                    // browser-based fetch cannot disable SSL verification, you need to ensure the browser trusts the cert
+                });
+
                 if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
 
                 const videos = await response.json();
@@ -120,7 +129,7 @@
 
         const playVideo = (video) => {
             const videoPlayer = document.getElementById('videoPlayer');
-            videoPlayer.innerHTML = `
+            videoPlayer.innerHTML = `  
                 <video controls autoplay>
                     <source src="https://localhost:8084/${video}" type="video/mp4">
                     Your browser does not support the video tag.

@@ -30,8 +30,9 @@ async def check_video_on_replicas(video_name):
     """Asynchronously check if the video exists on any replica server."""
     for replica in CACHE_SERVERS:
         try:
+            # Disable SSL verification for inter-server requests
             async with aiohttp.ClientSession() as session:
-                async with session.head(f"{replica}/{video_name}") as response:
+                async with session.head(f"{replica}/{video_name}", ssl=False) as response:
                     if response.status == 200:
                         return True  # Video exists on this replica
         except Exception as e:
@@ -54,7 +55,8 @@ async def replicate_video_to_cache_servers(video_name):
                     data = aiohttp.FormData()
                     data.add_field('video_name', video_name)
                     data.add_field('video', video_file, filename=video_name, content_type='video/mp4')
-                    async with session.post(f"{cache_server}/replicate", data=data) as response:
+                    # Disable SSL verification for inter-server requests
+                    async with session.post(f"{cache_server}/replicate", data=data, ssl=False) as response:
                         if response.status == 200:
                             print(f"Video {video_name} successfully replicated to {cache_server}")
                         else:
@@ -115,7 +117,7 @@ if __name__ == '__main__':
     config.bind = ["localhost:8080"]
     config.certfile = ssl_context[0]  # Path to SSL certificate
     config.keyfile = ssl_context[1]   # Path to SSL private key
-    config.alpn_protocols = ["h2","http/1.1"]  # Enable HTTP/2 and HTTP/1.1
+    config.alpn_protocols = ["h2", "http/1.1"]  # Enable HTTP/2 and HTTP/1.1
 
     print("Starting server on https://localhost:8080 (HTTP/2 enabled)...")
 
