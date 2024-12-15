@@ -2,102 +2,124 @@ from flask import Flask, Response, jsonify, send_from_directory
 import os
 import requests
 from flask_cors import CORS
+import asyncio
+import aiohttp
 
+# Initialize Flask app
 app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
 
 # Directory where video files are located
-video_directory = 'videos'
+VIDEO_DIRECTORY = 'videos'
 
 # List of cache servers (replica servers)
-cache_servers = [
+CACHE_SERVERS = [
     'http://localhost:8081', 'http://localhost:8082', 'http://localhost:8083'
 ]
 
+# ------------------------- Helper Functions -------------------------
 
-def check_video_on_replicas(video_name):
-    """Check if the video exists on any replica server."""
-    for replica in cache_servers:
+def get_video_path(video_name):
+    """Constructs the absolute path to a video."""
+    return os.path.abspath(os.path.join(VIDEO_DIRECTORY, video_name))
+
+def video_exists_locally(video_name):
+    """Checks if a video exists in the local video directory."""
+    return os.path.exists(get_video_path(video_name))
+
+async def check_video_on_replicas(video_name):
+    """Asynchronously check if the video exists on any replica server."""
+    for replica in CACHE_SERVERS:
         try:
-            response = requests.head(f"{replica}/{video_name}")
-            if response.status_code == 200:
-                return True  # Video exists on this replica
-        except requests.exceptions.RequestException as e:
+            async with aiohttp.ClientSession() as session:
+                async with session.head(f"{replica}/{video_name}") as response:
+                    if response.status == 200:
+                        return True  # Video exists on this replica
+        except Exception as e:
             print(f"Error checking video on {replica}: {e}")
     return False
 
-
-def replicate_video_to_cache_servers(video_name):
-    """Push the video to all cache servers asynchronously."""
-    video_path = os.path.abspath(os.path.join(video_directory, video_name))
-    if not os.path.exists(video_path):
-        print(f"Video {video_name} not found for replication")
+async def replicate_video_to_cache_servers(video_name):
+    """Asynchronously push the video to all cache servers."""
+    video_path = get_video_path(video_name)
+    if not video_exists_locally(video_name):
+        print(f"Video {video_name} not found locally for replication.")
         return
 
     print(f"Replicating video {video_name} to all cache servers...")
 
-    with open(video_path, 'rb') as video_file:
-        video_content = video_file.read()
-
-    for cache_server in cache_servers:
+    async def replicate_to_server(cache_server):
         try:
-            response = requests.post(
-                f"{cache_server}/replicate",
-                data={'video_name': video_name},
-                files={'video': (video_name, video_content, 'video/mp4')}
-            )
-            if response.status_code == 200:
-                print(f"Video {video_name} successfully replicated to {cache_server}")
-            else:
-                print(f"Failed to replicate video {video_name} to {cache_server}: {response.status_code}")
-        except requests.exceptions.RequestException as e:
+            async with aiohttp.ClientSession() as session:
+                with open(video_path, 'rb') as video_file:
+                    data = aiohttp.FormData()
+                    data.add_field('video_name', video_name)
+                    data.add_field('video', video_file, filename=video_name, content_type='video/mp4')
+                    async with session.post(f"{cache_server}/replicate", data=data) as response:
+                        if response.status == 200:
+                            print(f"Video {video_name} successfully replicated to {cache_server}")
+                        else:
+                            print(f"Failed to replicate video {video_name} to {cache_server}: {response.status}")
+        except Exception as e:
             print(f"Error replicating video {video_name} to cache server {cache_server}: {e}")
 
+    tasks = [replicate_to_server(server) for server in CACHE_SERVERS]
+    await asyncio.gather(*tasks)
+
+# ------------------------- API Endpoints -------------------------
 
 @app.route('/')
 def home():
+    """Welcome endpoint for the server."""
     return "Welcome to the Origin Server!"
-
 
 @app.route('/videos', methods=['GET'])
 def list_videos():
+    """Lists all available videos in the video directory."""
     try:
-        files = os.listdir(video_directory)
+        files = os.listdir(VIDEO_DIRECTORY)
         video_files = [file for file in files if file.lower().endswith('.mp4')]
-        return jsonify(video_files)
+        return jsonify(video_files), 200, {'Cache-Control': 'max-age=3600, public'}
     except Exception as e:
         print(f"Error reading video directory: {e}")
         return "Error reading video directory", 500
 
-
 @app.route('/<path:filename>', methods=['GET'])
 def serve_video(filename):
-    # Check if video exists on any cache server
-    if check_video_on_replicas(filename):
-        print(f"Video {filename} already available on cache servers.")
-        return jsonify({'status': 'Video already cached'}), 200
-
-    # Replicate video to cache servers if not cached
-    replicate_video_to_cache_servers(filename)
-
+    """Serves a video and replicates it to cache servers if not already cached."""
     try:
-        video_path = os.path.join(video_directory, filename)
-        return send_from_directory(video_directory, filename)
+        # Check if the video exists on replica servers
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        video_cached = loop.run_until_complete(check_video_on_replicas(filename))
+
+        if video_cached:
+            print(f"Video {filename} is already cached on replica servers.")
+        else:
+            # Replicate video to cache servers if not cached
+            loop.run_until_complete(replicate_video_to_cache_servers(filename))
+
+        # Serve the video
+        response = send_from_directory(VIDEO_DIRECTORY, filename)
+        response.headers['Cache-Control'] = 'max-age=3600, public'
+        return response
     except Exception as e:
         print(f"Error serving video {filename}: {e}")
         return "Error serving video", 500
 
+# ------------------------- Main Entry Point -------------------------
 
 if __name__ == '__main__':
-    import hypercorn.asyncio
+    from hypercorn.asyncio import serve
     from hypercorn.config import Config
 
     config = Config()
     config.bind = ["localhost:8080"]
-    # Enable TLS with your certificate and key files
-    config.ssl_certfile = "CERT\certificate.pem"
-    config.ssl_keyfile = "CERT\private.pem"
-    config.alpn_protocols = ["h2"]
+    config.ssl_certfile = "CERT/certificate.pem"  # Path to your SSL certificate
+    config.ssl_keyfile = "CERT/private.pem"       # Path to your SSL private key
+    config.alpn_protocols = ["h2"]  # Enable HTTP/2
 
-    import asyncio
-    asyncio.run(hypercorn.asyncio.serve(app, config))
+    print("Starting server on https://localhost:8080 (HTTP/2 enabled)...")
+
+    # Run the Hypercorn server
+    asyncio.run(serve(app, config))
