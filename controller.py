@@ -1,7 +1,10 @@
 from flask import Flask, jsonify, Response
 import requests
-
+from flask_cors import CORS 
 app = Flask(__name__)
+
+CORS(app, origins="*", methods=["GET", "POST"], supports_credentials=True)
+
 
 # Define configuration variables for the replica servers
 REPLICA_SERVERS = ['https://localhost:8081', 'https://localhost:8082', 'https://localhost:8083']

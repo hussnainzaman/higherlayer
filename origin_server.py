@@ -1,12 +1,15 @@
-from flask import Flask, Response, jsonify, send_from_directory
+from flask import Flask, Response, jsonify, send_from_directory, make_response
 import os
 import asyncio
 import aiohttp
+from flask_cors import CORS 
 from hypercorn.asyncio import serve
 from hypercorn.config import Config
 
 # Initialize Flask app
 app = Flask(__name__)
+
+CORS(app, origins="*", methods=["GET", "POST"], supports_credentials=True)
 
 # Directory where video files are located
 VIDEO_DIRECTORY = 'videos'
@@ -107,6 +110,8 @@ def serve_video(filename):
     except Exception as e:
         print(f"Error serving video {filename}: {e}")
         return "Error serving video", 500
+
+
 
 # ------------------------- Main Entry Point -------------------------
 

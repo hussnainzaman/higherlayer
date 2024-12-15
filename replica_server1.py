@@ -6,8 +6,11 @@ from hypercorn.config import Config
 import aiohttp
 import ssl
 
-# Initialize Flask app
+from flask_cors import CORS 
 app = Flask(__name__)
+
+CORS(app, origins="*", methods=["GET", "POST"], supports_credentials=True)
+
 
 # Directory to store replicated videos
 REPLICA_VIDEO_DIRECTORY = 'replicated_videos_1'
