@@ -44,20 +44,39 @@ def get_video(video_name):
                     # Fetch the video from the selected replica server
                     response = requests.get(f"{selected_replica}/{video_name}.mp4", stream=True)
                     if response.status_code == 200:
-                        return Response(response.iter_content(chunk_size=1024), content_type='video/mp4')
+                        def generate():
+                            try:
+                                for chunk in response.iter_content(chunk_size=1024):
+                                    if chunk:
+                                        yield chunk
+                            except GeneratorExit:
+                                print("Streaming stopped by client.")
+                            except Exception as e:
+                                print(f"Error during video streaming: {e}")
+                        return Response(generate(), content_type='video/mp4')
                 except requests.exceptions.RequestException as e:
                     print(f"Error fetching from replica {selected_replica}: {e}")
-
+    
     # If video is not cached, fetch from origin server
     origin_server_url = f"http://localhost:8080/{video_name}.mp4"
     try:
         response = requests.get(origin_server_url, stream=True)
         if response.status_code == 200:
-            return Response(response.iter_content(chunk_size=1024), content_type='video/mp4')
+            def generate():
+                try:
+                    for chunk in response.iter_content(chunk_size=1024):
+                        if chunk:
+                            yield chunk
+                except GeneratorExit:
+                    print("Streaming stopped by client.")
+                except Exception as e:
+                    print(f"Error during video streaming: {e}")
+            return Response(generate(), content_type='video/mp4')
     except requests.exceptions.RequestException as e:
         print(f"Error fetching video from origin server: {e}")
 
     return jsonify({'error': f'{video_name}.mp4 not available on any server'}), 500
+
 
 if __name__ == '__main__':
     import hypercorn.asyncio
