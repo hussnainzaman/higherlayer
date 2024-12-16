@@ -152,7 +152,7 @@ if __name__ == '__main__':
     config.alpn_protocols = ["h2", "http/1.1"]  # Enable HTTP/2
     config.certfile = "cert/cert.pem"  # Specify the SSL certificate
     config.keyfile = "cert/key.pem"  # Specify the SSL key
-    config.ssl_handshake_timeout = 120
+    config.ssl_handshake_timeout = 5
 
     import asyncio
     asyncio.run(hypercorn.asyncio.serve(app, config))

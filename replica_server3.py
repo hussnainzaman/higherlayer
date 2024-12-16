@@ -115,7 +115,7 @@ if __name__ == '__main__':
     config.alpn_protocols = ["h2","http/1.1"]  # Enable HTTP/2
     config.certfile = 'cert/cert.pem'  # Path to your SSL certificate
     config.keyfile = 'cert/key.pem'    # Path to your SSL private key
-    config.ssl_handshake_timeout = 120
+    config.ssl_handshake_timeout = 5
 
     # Run the server asynchronously with Hypercorn and SSL enabled
     print("Starting Replica Server 3 on https://localhost:8082")
