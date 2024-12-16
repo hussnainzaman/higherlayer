@@ -129,7 +129,7 @@ if __name__ == '__main__':
     config.certfile = ssl_context[0]  # Path to SSL certificate
     config.keyfile = ssl_context[1]   # Path to SSL private key
     config.alpn_protocols = ["h2","http/1.1"]  # Disable HTTP/2 temporarily if needed
-    config.shutdown_timeout = 50       # Increase shutdown timeout to avoid errors
+    config.shutdown_timeout = 120       # Increase shutdown timeout to avoid errors
 
     print("Starting server on https://localhost:8080...")
 

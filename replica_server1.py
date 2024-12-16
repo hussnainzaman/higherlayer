@@ -17,6 +17,8 @@ REPLICA_VIDEO_DIRECTORY = 'replicated_videos_1'
 
 # Path to the CA certificate
 CA_CERT_PATH = 'cert/cert.pem'
+CLIENT_CERT_PATH = 'cert/client_cert.pem'  # Client certificate path
+CLIENT_KEY_PATH = 'cert/client_key.pem'    # Client certificate private key path
 
 # Ensure the replica video directory exists
 os.makedirs(REPLICA_VIDEO_DIRECTORY, exist_ok=True)
@@ -95,22 +97,26 @@ async def stream_video(video_path):
     def generate():
         try:
             with open(video_path, 'rb') as video_file:
-                while chunk := video_file.read(1024 * 64):  # Stream 64 KB chunks
+                while chunk := video_file.read(1024):  # Stream 64 KB chunks
                     yield chunk
         except Exception as e:
             print(f"Error during video streaming: {e}")
-
+        
     return Response(generate(), content_type='video/mp4')
 
 if __name__ == '__main__':
-    # Configure the server to use HTTP/2 with SSL
+    # Configure the server to use HTTP/2 with SSL and require client certificates
     config = Config()
     config.bind = ["localhost:8081"]  # Set the server to listen on localhost and port 8081
-    config.alpn_protocols = ["h2", "http/1.1"]  # Enable HTTP/2
+    config.alpn_protocols = ["h2","http/1.1"]  # Enable HTTP/2
     config.certfile = 'cert/cert.pem'  # Path to your SSL certificate
     config.keyfile = 'cert/key.pem'    # Path to your SSL private key
-    config.ssl_handshake_timeout = 50
+    config.ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+    config.ssl_context.load_cert_chain(certfile='cert/cert.pem', keyfile='cert/key.pem')
+    config.ssl_context.load_verify_locations(CA_CERT_PATH)  # Load the CA to verify the client certificate
+    config.ssl_context.verify_mode = ssl.CERT_OPTIONAL  # Optionally, use CERT_REQUIRED if you need strict client certificate verification
+    config.ssl_handshake_timeout = 120
 
     # Run the server asynchronously with Hypercorn and SSL enabled
-    print("Starting Replica Server 1 on https://localhost:8081")
+    print("Starting Replica Server 1 on https://localhost:8082")
     asyncio.run(serve(app, config))
