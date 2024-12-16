@@ -13,24 +13,29 @@ app = Quart(__name__)
 app = cors(app, allow_origin="*")
 
 # Directory to store replicated videos
-REPLICA_VIDEO_DIRECTORY = 'replicated_videos_2'
+REPLICA_VIDEO_DIRECTORY = 'replicated_videos_3'
 
 # Path to the CA certificate
-CA_CERT_PATH = 'cert/cert.pem'
-CLIENT_CERT_PATH = 'cert/client_cert.pem'  # Client certificate path
-CLIENT_KEY_PATH = 'cert/client_key.pem'    # Client certificate private key path
-
 # Ensure the replica video directory exists
 os.makedirs(REPLICA_VIDEO_DIRECTORY, exist_ok=True)
+CA_CERT_PATH = 'cert/cert.pem'
 
+
+def get_ssl_context():
+    """Create and return a unified SSL context."""
+    ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+    ssl_context.load_cert_chain(certfile='cert/cert.pem', keyfile='cert/key.pem')
+    ssl_context.load_verify_locations(cafile=CA_CERT_PATH)
+    ssl_context.verify_mode = ssl.CERT_OPTIONAL
+    return ssl_context
 @app.route('/')
 async def home():
     """
     Welcome endpoint for the replica server.
     """
-    return "Welcome to Replica Server 2!"
+    return "Welcome to Replica Server 3!"
 
-@app.route('/<video_name>', methods=['HEAD', 'GET'])
+@app.route('/<video_name>')
 async def serve_replicated_video(video_name):
     """
     Serve a video file from the replica server.
@@ -91,32 +96,27 @@ async def replicate_video():
         return Response(f"Error during replication: {str(e)}", status=500)
 
 async def stream_video(video_path):
-    """
-    Asynchronously stream a video file.
-    """
+    """Asynchronously stream a video file."""
     def generate():
         try:
             with open(video_path, 'rb') as video_file:
-                while chunk := video_file.read(1024):  # Stream 64 KB chunks
+                while chunk := video_file.read(1024 * 64):  # Stream 64 KB chunks
                     yield chunk
         except Exception as e:
             print(f"Error during video streaming: {e}")
-        
-    return Response(generate(), content_type='video/mp4')
+            raise e
+
+    return Response(generate(), content_type="video/mp4")
 
 if __name__ == '__main__':
     # Configure the server to use HTTP/2 with SSL and require client certificates
     config = Config()
-    config.bind = ["localhost:8082"]  # Set the server to listen on localhost and port 8081
+    config.bind = ["localhost:8083"]  # Set the server to listen on localhost and port 8081
     config.alpn_protocols = ["h2","http/1.1"]  # Enable HTTP/2
     config.certfile = 'cert/cert.pem'  # Path to your SSL certificate
     config.keyfile = 'cert/key.pem'    # Path to your SSL private key
-    config.ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
-    config.ssl_context.load_cert_chain(certfile='cert/cert.pem', keyfile='cert/key.pem')
-    config.ssl_context.load_verify_locations(CA_CERT_PATH)  # Load the CA to verify the client certificate
-    config.ssl_context.verify_mode = ssl.CERT_OPTIONAL  # Optionally, use CERT_REQUIRED if you need strict client certificate verification
     config.ssl_handshake_timeout = 120
 
     # Run the server asynchronously with Hypercorn and SSL enabled
-    print("Starting Replica Server 1 on https://localhost:8082")
+    print("Starting Replica Server 3 on https://localhost:8082")
     asyncio.run(serve(app, config))

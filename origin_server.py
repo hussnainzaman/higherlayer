@@ -25,6 +25,13 @@ CACHE_SERVERS = [
 CA_CERT_PATH = 'cert/cert.pem'
 
 # ------------------------- Helper Functions -------------------------
+def get_ssl_context():
+    """Create and return a unified SSL context."""
+    ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+    ssl_context.load_cert_chain(certfile='cert/cert.pem', keyfile='cert/key.pem')
+    ssl_context.load_verify_locations(cafile=CA_CERT_PATH)
+    ssl_context.verify_mode = ssl.CERT_OPTIONAL
+    return ssl_context
 
 def get_video_path(video_name):
     """Constructs the absolute path to a video."""
@@ -36,7 +43,7 @@ def video_exists_locally(video_name):
 
 async def check_video_on_replicas(video_name):
     """Asynchronously check if the video exists on any replica server."""
-    ssl_context = ssl.create_default_context(cafile=CA_CERT_PATH)  # Use custom CA certificate
+    ssl_context = get_ssl_context() # Use custom CA certificate
     for replica in CACHE_SERVERS:
         try:
             async with aiohttp.ClientSession() as session:
@@ -56,7 +63,7 @@ async def replicate_video_to_cache_servers(video_name):
 
     print(f"Replicating video {video_name} to all cache servers...")
 
-    ssl_context = ssl.create_default_context(cafile=CA_CERT_PATH)  # Use custom CA certificate
+    ssl_context = get_ssl_context() # Use custom CA certificate
 
     async def replicate_to_server(cache_server):
         try:
@@ -83,7 +90,7 @@ async def home():
     """Welcome endpoint for the server."""
     return "Welcome to the Origin Server!"
 
-@app.route('/videos', methods=['GET'])
+@app.route('/videos')
 async def list_videos():
     """Lists all available videos in the video directory."""
     try:
@@ -124,10 +131,9 @@ async def serve_video(filename):
 if __name__ == '__main__':
     # Hypercorn configuration with SSL and HTTP/2 enabled
     config = Config()
-    ssl_context = ('cert/cert.pem', 'cert/key.pem')
     config.bind = ["localhost:8080"]
-    config.certfile = ssl_context[0]  # Path to SSL certificate
-    config.keyfile = ssl_context[1]   # Path to SSL private key
+    config.certfile = "cert/cert.pem"  # Path to SSL certificate
+    config.keyfile = 'cert/key.pem'   # Path to SSL private key
     config.alpn_protocols = ["h2","http/1.1"]  # Disable HTTP/2 temporarily if needed
     config.shutdown_timeout = 120       # Increase shutdown timeout to avoid errors
 

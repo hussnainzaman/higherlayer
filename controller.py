@@ -18,6 +18,12 @@ CA_CERT_PATH = 'cert/cert.pem'
 # Initialize round-robin index for each video (ensures even distribution of requests)
 round_robin_index = {}
 
+def get_ssl_context():
+    """Create and return a unified SSL context."""
+    ssl_context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH, cafile=CA_CERT_PATH)
+    ssl_context.load_cert_chain(certfile='cert/cert.pem', keyfile='cert/key.pem')
+    ssl_context.verify_mode = ssl.CERT_REQUIRED
+    return ssl_context
 
 def get_next_replica(video_name):
     """Retrieve the next replica server for the given video using round-robin logic."""
@@ -37,7 +43,7 @@ def get_next_replica(video_name):
 
 async def check_video_on_replicas(video_name):
     """Asynchronously check if the video exists on any replica server."""
-    ssl_context = ssl.create_default_context(cafile=CA_CERT_PATH)
+    ssl_context = get_ssl_context()
     for replica in REPLICA_SERVERS:
         try:
             async with aiohttp.ClientSession() as session:
@@ -49,35 +55,42 @@ async def check_video_on_replicas(video_name):
         except Exception as e:
             print(f"Error checking video on {replica}: {e}")
     return False
-async def fetch_video_from_replica(selected_replica, video_name):
-  ssl_context = ssl.create_default_context(cafile=CA_CERT_PATH)
-  video_url = f"{selected_replica}/{video_name}"
+async def fetch_video_from_replica(replica_url, video_name):
+    """Fetch the video from the given replica server."""
+    video_url = f"{replica_url}/{video_name}"
+    ssl_context = get_ssl_context()
 
-  timeout = aiohttp.ClientTimeout(total=60)  # 60 seconds timeout
+    try:
+        print(f"Fetching video {video_name} from replica {replica_url}...")
 
-  try:
-    print(f"Fetching video {video_name} from replica {selected_replica}...")
+        # Open the ClientSession outside the `generate` function
+        session = aiohttp.ClientSession()
+        response = await session.get(video_url, ssl=ssl_context, timeout=aiohttp.ClientTimeout(total=300))
 
-    async with aiohttp.ClientSession(timeout=timeout) as session:
-      async with session.get(video_url, ssl=ssl_context) as response:
         if response.status == 200:
-          # Define a generator to stream the video in chunks
-          async def generate():
-            try:
-              async for chunk in response.content.iter_chunked(1024):
-                yield chunk
-            except Exception as e:
-              print(f"Error during video streaming from {selected_replica}: {e}")
+            # Stream the response directly without closing the session prematurely
+            async def generate():
+                try:
+                    async for chunk in response.content.iter_chunked(1024 * 64):  # 64 KB chunks
+                        yield chunk
+                except Exception as e:
+                    print(f"Error during video streaming from {replica_url}: {e}")
+                finally:
+                    # Ensure response and session are closed after streaming completes
+                    await response.release()
+                    await session.close()
 
-          return Response(generate(), content_type='video/mp4')
+            return Response(generate(), content_type="video/mp4")
         else:
-          print(f"Error fetching video {video_name} from {selected_replica}: {response.status}")
-          return jsonify({'error': f'Error fetching video from replica {selected_replica}'}), 500
-  except Exception as e:
-    print(f"Error fetching video from replica {selected_replica}: {e}")
-    # Implement retry logic here
-    # You can retry a certain number of times with a backoff delay
-    return jsonify({'error': f'Error fetching video from replica {selected_replica}'}), 500
+            print(f"Replica {replica_url} returned status: {response.status}")
+            await response.release()
+            await session.close()
+            return jsonify({'error': 'Error fetching video from replica'}), response.status
+    except Exception as e:
+        print(f"Error fetching video from replica {replica_url}: {e}")
+        return jsonify({'error': f'Error connecting to replica {replica_url}'}), 500
+
+
 
 @app.route('/')
 async def home():
