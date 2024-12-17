@@ -25,6 +25,7 @@ def get_ssl_context():
     ssl_context.verify_mode = ssl.CERT_REQUIRED
     return ssl_context
 
+
 def get_next_replica(video_name):
     """Retrieve the next replica server for the given video using round-robin logic."""
     global round_robin_index
@@ -117,30 +118,35 @@ async def get_video(video_name):
 
     # If the video is not cached, fetch it from the origin server
     origin_server_url = f"https://localhost:8080/{video_file}"
+    sslCtx = get_ssl_context()
     try:
         print(f"Video not found on replicas, fetching from origin server at {origin_server_url}...")
-        async with aiohttp.ClientSession() as session:
-            async with session.get(origin_server_url, ssl=ssl.create_default_context(cafile=CA_CERT_PATH)) as response:
-                if response.status == 200:
-                    # Use the generator to stream the video content from the origin server
-                    async def generate():
-                        try:
-                            async for chunk in response.content.iter_any(1024):  # 1 KB chunks
-                                yield chunk
-                        except Exception as e:
-                            print(f"Error during video streaming: {e}")
-                            
+        
+        session = aiohttp.ClientSession()  # Create session outside the context manager
+        response = await session.get(origin_server_url, ssl=sslCtx)
 
-                    return Response(generate(), content_type='video/mp4')
-                else:
-                    print(f"Error fetching video from origin server: {response.status}")
-                    return jsonify({'error': f'Error fetching video from origin server'}), 500
+        if response.status == 200:
+            async def generate():
+                try:
+                    # Stream chunks from the origin server
+                    async for chunk in response.content.iter_chunked(64 * 1024):  # 64 KB chunks
+                        yield chunk
+                except Exception as e:
+                    print(f"Error during video streaming: {e}")
+                finally:
+                    # Properly close the session and response
+                    await response.release()
+                    await session.close()
+
+            return Response(generate(), content_type='video/mp4')
+        else:
+            print(f"Error fetching video from origin server: {response.status}")
+            await response.release()
+            await session.close()
+            return jsonify({'error': f'Error fetching video from origin server'}), response.status
     except Exception as e:
         print(f"Error fetching video from origin server: {e}")
-        return jsonify({'error': f'Error fetching video from origin server'}), 500
-
-    # If the video is not available on any server, return an error response
-    return jsonify({'error': f'{video_file} not available on any server'}), 500
+        return jsonify({'error': 'Error fetching video from origin server'}), 500
 
 
 if __name__ == '__main__':

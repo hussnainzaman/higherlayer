@@ -33,6 +33,14 @@ def get_ssl_context():
     ssl_context.verify_mode = ssl.CERT_OPTIONAL
     return ssl_context
 
+def get_ssl_context1():
+    """Create and return a unified SSL context."""
+    ssl_context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
+    ssl_context.load_cert_chain(certfile='cert/cert.pem', keyfile='cert/key.pem')
+    ssl_context.load_verify_locations(cafile=CA_CERT_PATH)
+    ssl_context.verify_mode = ssl.CERT_OPTIONAL
+    return ssl_context
+
 def get_video_path(video_name):
     """Constructs the absolute path to a video."""
     return os.path.abspath(os.path.join(VIDEO_DIRECTORY, video_name))
@@ -63,7 +71,7 @@ async def replicate_video_to_cache_servers(video_name):
 
     print(f"Replicating video {video_name} to all cache servers...")
 
-    ssl_context = get_ssl_context() # Use custom CA certificate
+    ssl_context = get_ssl_context1() # Use custom CA certificate
 
     async def replicate_to_server(cache_server):
         try:
@@ -103,28 +111,38 @@ async def list_videos():
 
 @app.route('/<path:filename>', methods=['GET'])
 async def serve_video(filename):
-    """Serves a video and replicates it to cache servers if not already cached."""
+    """Serves a video or redirects to a replica server if cached."""
     try:
         # Check if the video exists on replica servers
-        video_cached = await check_video_on_replicas(filename)
+        ssl_context = get_ssl_context1()
+        for replica in CACHE_SERVERS:
+            try:
+                # Check if video is available on the replica server
+                async with aiohttp.ClientSession() as session:
+                    async with session.head(f"{replica}/{filename}", ssl=ssl_context) as response:
+                        if response.status == 200:
+                            print(f"Redirecting to cached video on {replica}")
+                            return Response(
+                                status=302,
+                                headers={"Location": f"{replica}/{filename}"}
+                            )
+            except Exception as e:
+                print(f"Error checking video on replica {replica}: {e}")
 
-        if video_cached:
-            print(f"Video {filename} is already cached on replica servers.")
-        else:
-            # Replicate video to cache servers if not cached
-            await replicate_video_to_cache_servers(filename)
+        # If not cached, replicate video and serve it locally
+        print(f"Video {filename} not cached, replicating to cache servers.")
+        await replicate_video_to_cache_servers(filename)
 
-        # Construct the absolute path to the video
+        # Serve video locally
         video_path = get_video_path(filename)
-
         if os.path.exists(video_path):
-            # Serve the video using send_from_directory
             return await send_from_directory(VIDEO_DIRECTORY, filename)
         else:
             return jsonify({'error': f'Video {filename} not found'}), 404
     except Exception as e:
         print(f"Error serving video {filename}: {e}")
         return jsonify({'error': 'Internal Server Error'}), 500
+
 
 # ------------------------- Main Entry Point -------------------------
 
