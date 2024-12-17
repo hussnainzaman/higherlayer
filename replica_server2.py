@@ -13,7 +13,7 @@ app = Quart(__name__)
 app = cors(app, allow_origin="*")
 
 # Directory to store replicated videos
-REPLICA_VIDEO_DIRECTORY = 'replicated_videos_2'
+REPLICA_VIDEO_DIRECTORY = '.replicated_videos_2'
 
 # Path to the CA certificate
 # Ensure the replica video directory exists
